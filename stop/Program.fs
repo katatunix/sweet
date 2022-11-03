@@ -13,7 +13,7 @@ extern bool GenerateConsoleCtrlEvent (uint32 dwCtrlEvent, uint32 dwProcessGroupI
 
 type ConsoleCtrlDelegate = delegate of uint32 -> bool
 [<DllImport "kernel32.dll">]
-extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate handlerRoutine, bool add)
+extern bool SetConsoleCtrlHandler (ConsoleCtrlDelegate handlerRoutine, bool add)
 
 let stop log processId =
     let proc =
