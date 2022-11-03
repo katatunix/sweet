@@ -39,6 +39,7 @@ type State =
 
 module Miner =
     let start (state: State) (config: Config) =
+        let fileName = Path.GetFullPath config.MinerFileName
         let args =
             [   yield config.MinerParams
                 yield config.UsedDevicesParamName
@@ -49,7 +50,7 @@ module Miner =
             ]
             |> List.filter (String.IsNullOrWhiteSpace >> not)
             |> String.concat " "
-        Process.Start (config.MinerFileName, args)
+        Process.Start (fileName, args)
 
     let stop (proc: Process) =
         Utils.stopProcess proc.Id
@@ -82,7 +83,7 @@ let handle (state: State) (config: Config) =
 
 [<EntryPoint>]
 let main _ =
-    printfn "sweet 1.6 - nghia.buivan@hotmail.com"
+    printfn "sweet 1.7 - nghia.buivan@hotmail.com"
 
     let configFileName = "sweet.cfg"
     let stateFileName = "sweet.sav"
