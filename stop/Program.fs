@@ -11,6 +11,10 @@ extern bool AttachConsole (uint32 dwProcessId)
 [<DllImport "kernel32.dll">]
 extern bool GenerateConsoleCtrlEvent (uint32 dwCtrlEvent, uint32 dwProcessGroupId)
 
+type ConsoleCtrlDelegate = delegate of uint32 -> bool
+[<DllImport "kernel32.dll">]
+extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate handlerRoutine, bool add)
+
 let stop log processId =
     let proc =
         try Process.GetProcessById processId |> Ok
@@ -22,8 +26,10 @@ let stop log processId =
         log proc.ProcessName
         FreeConsole () |> ignore
         AttachConsole (uint32 processId) |> ignore
+        SetConsoleCtrlHandler (null, true) |> ignore
         GenerateConsoleCtrlEvent (0u, 0u) |> ignore
         proc.WaitForExit ()
+        SetConsoleCtrlHandler (null, false) |> ignore
         Ok ()
 
 let parseProcessId (argv: string[]) =
