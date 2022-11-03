@@ -1,4 +1,5 @@
-﻿open System.Runtime.InteropServices
+﻿open System
+open System.Runtime.InteropServices
 open System.Diagnostics
 
 [<DllImport ("kernel32.dll", SetLastError = true, ExactSpelling = true)>]
@@ -10,61 +11,39 @@ extern bool AttachConsole (uint32 dwProcessId)
 [<DllImport "kernel32.dll">]
 extern bool GenerateConsoleCtrlEvent (uint32 dwCtrlEvent, uint32 dwProcessGroupId)
 
-let freeConsole () =
-    try let ok = FreeConsole ()
-        if ok then Ok () else Error "Could not FreeConsole"
-    with ex ->
-        Error ("Could not FreeConsole: " + ex.Message)
-
-let attachConsole processId =
-    try let ok = AttachConsole (uint32 processId)
-        if ok then Ok () else Error "Could not AttachConsole"
-    with ex ->
-        Error ("Could not AttachConsole: " + ex.Message)
-
-let generateConsoleCtrlEvent ctrlEvent processGroupId =
-    try let ok = GenerateConsoleCtrlEvent (ctrlEvent, processGroupId)
-        if ok then Ok () else Error "Could not GenerateConsoleCtrlEvent"
-    with ex ->
-        Error ("Could not GenerateConsoleCtrlEvent: " + ex.Message)
-
-let getProcessName id =
-    try use proc = Process.GetProcessById id
-        Ok proc.ProcessName
-    with ex ->
-        Error (sprintf "Process with Id %d not found" id)
-
-let stop processId =
-    getProcessName processId
-    |> Result.bind (fun processName ->
-        printfn "Stopping %s:%d..." processName processId
-        freeConsole ()
-    )
-    |> Result.bind (fun _ ->
-        attachConsole processId
-    )
-    |> Result.bind (fun _ ->
-        generateConsoleCtrlEvent 0u 0u
-    )
+let stop log processId =
+    let proc =
+        try Process.GetProcessById processId |> Ok
+        with :? ArgumentException -> sprintf "Process with ID %d not found" processId |> Error
+    match proc with
+    | Error msg -> Error msg
+    | Ok proc ->
+        use proc = proc
+        log proc.ProcessName
+        FreeConsole () |> ignore
+        AttachConsole (uint32 processId) |> ignore
+        GenerateConsoleCtrlEvent (0u, 0u) |> ignore
+        proc.WaitForExit ()
+        Ok ()
 
 let parseProcessId (argv: string[]) =
-    if argv.Length = 0 then None
+    if argv.Length <> 1 then None
     else
-        match System.Int32.TryParse argv.[0] with
+        match Int32.TryParse argv.[0] with
         | true, processId -> Some processId
         | _ -> None
-
-let usage () =
-    printfn "Usage: Stop.exe processId"
 
 [<EntryPoint>]
 let main argv =
     match parseProcessId argv with
     | None ->
-        usage ()
+        printfn "Usage: stop.exe processId"
         -1
     | Some processId ->
-        match stop processId with
+        let result =
+            processId
+            |> stop (fun processName -> printfn "Stopping process %s:%d" processName processId)
+        match result with
         | Error msg ->
             printfn "%s" msg
             -2

@@ -1,13 +1,11 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-    <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props"
-            Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')"/>
-    <Import Project="..\packages\FSharp.Compiler.Tools.10.0.2\build\FSharp.Compiler.Tools.props"
-            Condition="Exists('..\packages\FSharp.Compiler.Tools.10.0.2\build\FSharp.Compiler.Tools.props')"/>
+    <Import Project="..\packages\FSharp.Compiler.Tools.10.1.2\build\FSharp.Compiler.Tools.props" Condition="Exists('..\packages\FSharp.Compiler.Tools.10.1.2\build\FSharp.Compiler.Tools.props')" />
+    <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
     <PropertyGroup>
         <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
         <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-        <ProjectGuid>{0AC0E4A8-4C84-4C09-AF3D-C62160315B54}</ProjectGuid>
+        <ProjectGuid>{3C3ACEC3-4A18-4AF9-924A-410B122BBF2C}</ProjectGuid>
         <OutputType>Exe</OutputType>
         <RootNamespace>stop</RootNamespace>
         <AssemblyName>stop</AssemblyName>
@@ -35,18 +33,26 @@
         <OtherFlags>--warnon:1182</OtherFlags>
     </PropertyGroup>
     <ItemGroup>
-        <Reference Include="mscorlib"/>
-        <Reference Include="System"/>
-        <Reference Include="System.Core"/>
-        <Reference Include="System.Numerics"/>
-        <Reference Include="FSharp.Core">
-            <HintPath>..\packages\FSharp.Core.4.5.2\lib\net45\FSharp.Core.dll</HintPath>
+        <Reference Include="FSharp.Core, Version=4.6.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
+          <HintPath>..\packages\FSharp.Core.4.6.2\lib\net45\FSharp.Core.dll</HintPath>
         </Reference>
+        <Reference Include="mscorlib" />
+        <Reference Include="System" />
+        <Reference Include="System.Core" />
+        <Reference Include="System.Json" />
+        <Reference Include="System.Numerics" />
+        <Reference Include="System.Runtime.Serialization" />
     </ItemGroup>
     <ItemGroup>
-        <Compile Include="AssemblyInfo.fs"/>
-        <Compile Include="Program.fs"/>
-        <Content Include="packages.config"/>
+        <Compile Include="AssemblyInfo.fs" />
+        <Compile Include="Program.fs" />
+        <Content Include="packages.config" />
     </ItemGroup>
-    <Import Project="$(FSharpTargetsPath)" Condition="Exists('$(FSharpTargetsPath)')"/>
+    <Import Project="$(FSharpTargetsPath)" Condition="Exists('$(FSharpTargetsPath)')" />
+    <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
+      <PropertyGroup>
+        <ErrorText>This project references NuGet package(s) that are missing on this computer. Enable NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105.The missing file is {0}.</ErrorText>
+      </PropertyGroup>
+      <Error Condition="!Exists('..\packages\FSharp.Compiler.Tools.10.1.2\build\FSharp.Compiler.Tools.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\FSharp.Compiler.Tools.10.1.2\build\FSharp.Compiler.Tools.props'))" />
+    </Target>
 </Project>
