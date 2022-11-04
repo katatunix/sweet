@@ -1,3 +1,5 @@
+msbuild -t:Build -p:Configuration=Release -m:2
+
 rm -dfr build
 mkdir build
 cp sweet/bin/Release/sweet.exe build
