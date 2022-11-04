@@ -48,7 +48,7 @@ let main argv =
     | Some processId ->
         let result =
             processId
-            |> stop (fun processName -> printfn "Stopping process %s:%d" processName processId)
+            |> stop (fun processName -> printfn "Stopping process %s:%d..." processName processId)
         match result with
         | Error msg ->
             printfn "%s" msg
