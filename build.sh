@@ -1,3 +1,5 @@
+#!/bin/sh -x
+
 msbuild -t:Build -p:Configuration=Release -m:2
 
 rm -dfr build
