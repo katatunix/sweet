@@ -8,8 +8,8 @@ let stopProcess (id: int) =
     use proc = Process.Start ("stop.exe", string id)
     proc.WaitForExit ()
 
-let countdown (ts: TimeSpan) (intervalMs: int) tick =
-    let exp = DateTime.Now + ts
+let countdown (length: TimeSpan) (intervalMs: int) tick =
+    let exp = DateTime.Now + length
     let mutable over = false
     while not over do
         let now = DateTime.Now

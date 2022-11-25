@@ -43,7 +43,7 @@ let parseProcessId (argv: string[]) =
 let main argv =
     match parseProcessId argv with
     | None ->
-        printfn "Usage: stop.exe processId"
+        printfn "Usage: stop.exe <processId>"
         -1
     | Some processId ->
         let result =
