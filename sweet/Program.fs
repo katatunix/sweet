@@ -1,6 +1,7 @@
 ﻿module Sweet.Main
 
 open System
+open System.Timers
 open System.IO
 open System.Diagnostics
 open FSharp.Json
@@ -81,9 +82,19 @@ let handle (state: State) (config: Config) =
         (fun ts -> Console.Write ("\rWaiting for miner to be stopped completely {0}", fmt ts))
     Console.WriteLine ()
 
+let createUptimeTimer (prefix: string) (beginTime: DateTime) =
+    let timer = new Timer (60. * 1000.)
+    timer.AutoReset <- true
+    timer.Elapsed.Add (fun _ ->
+        let uptime = (DateTime.Now - beginTime).ToString @"dd\d\.hh\:mm"
+        Console.Title <- sprintf "%s | %s" prefix uptime
+    )
+    timer
+
 [<EntryPoint>]
 let main _ =
-    printfn "sweet 1.7 - nghia.buivan@hotmail.com"
+    let version = "1.8"
+    printfn "sweet v%s - nghia.buivan@hotmail.com" version
 
     let configFileName = "sweet.cfg"
     let stateFileName = "sweet.sav"
@@ -91,9 +102,14 @@ let main _ =
     let config = Config.load configFileName
     let mutable state = State.load stateFileName |> State.clamp config.DeviceNumber
 
+    use timer = createUptimeTimer (sprintf "sweet v%s" version) DateTime.Now
+    timer.Start ()
+
     while true do
         handle state config
         state <- state |> State.incCurrentDeviceIndex config.DeviceNumber
         state |> State.save stateFileName
+
+    timer.Stop ()
 
     0
