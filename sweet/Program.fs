@@ -6,12 +6,15 @@ open System.IO
 open System.Diagnostics
 open FSharp.Json
 
-type Config =
+type Profile =
     { MinerFileName: string
       MinerParams: string
       DeviceParams: string list option
       UsedDevicesParamName: string
-      DeviceNumber: int
+      DeviceNumber: int }
+
+type Config =
+    { Profiles: Profile list
       IntervalHours: float
       MinerStopSeconds: int }
 
@@ -19,16 +22,28 @@ type Config =
         path |> File.ReadAllText |> Json.deserialize
 
 type State =
-    { CurrentDeviceIndex: int }
+    { CurrentProfileIndex: int
+      CurrentDeviceIndex: int }
 
     static member Default =
-        { CurrentDeviceIndex = 0 }
+        { CurrentProfileIndex = 0
+          CurrentDeviceIndex = 0 }
 
-    static member clamp max state =
-        { state with CurrentDeviceIndex = state.CurrentDeviceIndex % max }
+    static member clamp (config: Config) (state: State) =
+        let profileIndex = state.CurrentProfileIndex % config.Profiles.Length
+        let deviceIndex = state.CurrentDeviceIndex % config.Profiles.[profileIndex].DeviceNumber
+        { state with
+            CurrentProfileIndex = profileIndex
+            CurrentDeviceIndex = deviceIndex }
 
-    static member incCurrentDeviceIndex max state =
-        { state with CurrentDeviceIndex = (state.CurrentDeviceIndex + 1) % max }
+    static member next (config: Config) (state: State) =
+        let nextDeviceIndex = state.CurrentDeviceIndex + 1
+        if nextDeviceIndex < config.Profiles.[state.CurrentProfileIndex].DeviceNumber then
+            { state with CurrentDeviceIndex = nextDeviceIndex }
+        else
+            { state with
+                CurrentProfileIndex = (state.CurrentProfileIndex + 1) % config.Profiles.Length
+                CurrentDeviceIndex = 0 }
 
     static member load path =
         try path |> File.ReadAllText |> Json.deserialize
@@ -39,13 +54,14 @@ type State =
         File.WriteAllText (path, json)
 
 module Miner =
-    let start (state: State) (config: Config) =
-        let fileName = Path.GetFullPath config.MinerFileName
+    let start (config: Config) (state: State) =
+        let profile = config.Profiles.[state.CurrentProfileIndex]
+        let fileName = profile.MinerFileName |> Path.GetFullPath
         let args =
-            [   yield config.MinerParams
-                yield config.UsedDevicesParamName
+            [   yield profile.MinerParams
+                yield profile.UsedDevicesParamName
                 yield state.CurrentDeviceIndex |> string
-                let deviceParams = config.DeviceParams |> Option.defaultValue []
+                let deviceParams = profile.DeviceParams |> Option.defaultValue []
                 if state.CurrentDeviceIndex < deviceParams.Length then
                     yield deviceParams.[state.CurrentDeviceIndex]
             ]
@@ -56,12 +72,12 @@ module Miner =
     let stop (proc: Process) =
         Utils.stopProcess proc.Id
 
-let handle (state: State) (config: Config) =
+let handle (config: Config) (state: State) =
     printfn "\n================================= %A =================================" DateTime.Now
-    printfn "State:\n%A" state
     printfn "Config:\n%A" config
+    printfn "State:\n%A" state
 
-    use proc = Miner.start state config
+    use proc = Miner.start config state
     printfn "Miner started!"
     printfn "Process ID: %d" proc.Id
     printfn "Command: %s %s" proc.StartInfo.FileName proc.StartInfo.Arguments
@@ -93,21 +109,21 @@ let createUptimeTimer (prefix: string) (beginTime: DateTime) =
 
 [<EntryPoint>]
 let main _ =
-    let version = "1.8"
-    printfn "sweet v%s - nghia.buivan@hotmail.com" version
+    let version = "v1.9"
+    printfn "sweet %s - nghia.buivan@hotmail.com" version
 
     let configFileName = "sweet.cfg"
     let stateFileName = "sweet.sav"
 
     let config = Config.load configFileName
-    let mutable state = State.load stateFileName |> State.clamp config.DeviceNumber
+    let mutable state = State.load stateFileName |> State.clamp config
 
-    use timer = createUptimeTimer (sprintf "sweet v%s" version) DateTime.Now
+    use timer = createUptimeTimer (sprintf "sweet %s" version) DateTime.Now
     timer.Start ()
 
     while true do
-        handle state config
-        state <- state |> State.incCurrentDeviceIndex config.DeviceNumber
+        handle config state
+        state <- state |> State.next config
         state |> State.save stateFileName
 
     timer.Stop ()
