@@ -5,8 +5,16 @@ open System.Threading
 open System.Diagnostics
 
 let stopProcess (id: int) =
-    use proc = Process.Start ("stop.exe", string id)
-    proc.WaitForExit ()
+    let mutable still = true
+    while still do
+        use proc = Process.Start ("stop.exe", string id)
+        proc.WaitForExit ()
+        match proc.ExitCode with
+        | 0  -> still <- false
+        | -1 -> failwith "bug"
+        | -2 -> still <- false
+        | -3 -> Thread.Sleep 3000
+        | _  -> failwith "bug"
 
 let countdown (length: TimeSpan) (intervalMs: int) tick =
     let exp = DateTime.Now + length

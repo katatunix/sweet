@@ -109,7 +109,7 @@ let createUptimeTimer (prefix: string) (beginTime: DateTime) =
 
 [<EntryPoint>]
 let main _ =
-    let version = "v1.9"
+    let version = "v1.10"
     printfn "sweet %s - nghia.buivan@hotmail.com" version
 
     let configFileName = "sweet.cfg"

@@ -15,22 +15,27 @@ type ConsoleCtrlDelegate = delegate of uint32 -> bool
 [<DllImport "kernel32.dll">]
 extern bool SetConsoleCtrlHandler (ConsoleCtrlDelegate handlerRoutine, bool add)
 
-let stop log processId =
+type StopError =
+    | ProcessIdNotFound
+    | UnexpectedError of string
+
+let stop logProcessName processId =
     let proc =
         try Process.GetProcessById processId |> Ok
-        with :? ArgumentException -> sprintf "Process with ID %d not found" processId |> Error
+        with :? ArgumentException -> Error ProcessIdNotFound
     match proc with
     | Error msg -> Error msg
     | Ok proc ->
-        use proc = proc
-        log proc.ProcessName
-        FreeConsole () |> ignore
-        AttachConsole (uint32 processId) |> ignore
-        SetConsoleCtrlHandler (null, true) |> ignore
-        GenerateConsoleCtrlEvent (0u, 0u) |> ignore
-        proc.WaitForExit ()
-        SetConsoleCtrlHandler (null, false) |> ignore
-        Ok ()
+        try
+            logProcessName proc.ProcessName
+            FreeConsole () |> ignore
+            AttachConsole (uint32 processId) |> ignore
+            SetConsoleCtrlHandler (null, true) |> ignore
+            GenerateConsoleCtrlEvent (0u, 0u) |> ignore
+            proc.WaitForExit ()
+            SetConsoleCtrlHandler (null, false) |> ignore
+            Ok ()
+        with ex -> Error (UnexpectedError ex.Message)
 
 let parseProcessId (argv: string[]) =
     if argv.Length <> 1 then None
@@ -50,8 +55,11 @@ let main argv =
             processId
             |> stop (fun processName -> printfn "Stopping process %s:%d..." processName processId)
         match result with
-        | Error msg ->
-            printfn "%s" msg
+        | Error ProcessIdNotFound ->
+            printfn "Process with ID %d not found" processId
             -2
+        | Error (UnexpectedError msg) ->
+            printfn "%s" msg
+            -3
         | Ok () ->
             0
