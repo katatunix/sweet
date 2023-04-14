@@ -7,43 +7,37 @@ open System.Diagnostics
 open FSharp.Json
 
 type Profile =
-    { MinerFileName: string
+    { MinerFileName: string // gminer.exe
       MinerParams: string
-      DeviceParams: string list option
-      UsedDevicesParamName: string
-      DeviceNumber: int }
+      TotalDevicesNumber: int // 8
+      DeviceSpecificParams: Map<string, string list>
+      UsedDevicesParamName: string // -d
+      Separator: string // space or comma
+    }
 
 type Config =
     { Profiles: Profile list
-      IntervalHours: float
-      MinerStopSeconds: int }
-
-    static member load path : Config =
-        path |> File.ReadAllText |> Json.deserialize
+      RunDevicesNumber: int // 2
+      IntervalHours: float // 6.0
+      MinerStopSeconds: int // 10
+    }
+    static member load path =
+        path |> File.ReadAllText |> Json.deserialize : Config
 
 type State =
-    { CurrentProfileIndex: int
-      CurrentDeviceIndex: int }
+    { CurrentDeviceIndex: int }
 
     static member Default =
-        { CurrentProfileIndex = 0
-          CurrentDeviceIndex = 0 }
+        { CurrentDeviceIndex = 0 }
 
     static member clamp (config: Config) (state: State) =
-        let profileIndex = state.CurrentProfileIndex % config.Profiles.Length
-        let deviceIndex = state.CurrentDeviceIndex % config.Profiles.[profileIndex].DeviceNumber
+        let totalDevicesNumber = config.Profiles |> List.sumBy (fun p -> p.TotalDevicesNumber)
         { state with
-            CurrentProfileIndex = profileIndex
-            CurrentDeviceIndex = deviceIndex }
+            CurrentDeviceIndex = state.CurrentDeviceIndex % totalDevicesNumber }
 
     static member next (config: Config) (state: State) =
-        let nextDeviceIndex = state.CurrentDeviceIndex + 1
-        if nextDeviceIndex < config.Profiles.[state.CurrentProfileIndex].DeviceNumber then
-            { state with CurrentDeviceIndex = nextDeviceIndex }
-        else
-            { state with
-                CurrentProfileIndex = (state.CurrentProfileIndex + 1) % config.Profiles.Length
-                CurrentDeviceIndex = 0 }
+        { state with CurrentDeviceIndex = state.CurrentDeviceIndex + config.RunDevicesNumber }
+        |> State.clamp config
 
     static member load path =
         try path |> File.ReadAllText |> Json.deserialize
@@ -54,48 +48,81 @@ type State =
         File.WriteAllText (path, json)
 
 module Miner =
-    let start (config: Config) (state: State) =
-        let profile = config.Profiles.[state.CurrentProfileIndex]
-        let fileName = profile.MinerFileName |> Path.GetFullPath
-        let args =
-            [   yield profile.MinerParams
-                yield profile.UsedDevicesParamName
-                yield state.CurrentDeviceIndex |> string
-                let deviceParams = profile.DeviceParams |> Option.defaultValue []
-                if state.CurrentDeviceIndex < deviceParams.Length then
-                    yield deviceParams.[state.CurrentDeviceIndex]
-            ]
-            |> List.filter (String.IsNullOrWhiteSpace >> not)
-            |> String.concat " "
-        Process.Start (fileName, args)
+    let private genDevicesToRun (config: Config) (state: State) =
+        Seq.initInfinite (fun _ ->
+            seq {
+                for profileIndex = 0 to config.Profiles.Length - 1 do
+                    for deviceIndex = 0 to config.Profiles.[profileIndex].TotalDevicesNumber - 1 do
+                        yield profileIndex, deviceIndex
+            }
+        )
+        |> Seq.concat
+        |> Seq.skip state.CurrentDeviceIndex
+        |> Seq.take config.RunDevicesNumber
+        |> List.ofSeq
+        |> List.groupBy fst
+        |> List.map (fun (profileIndex, devices) -> profileIndex, devices |> List.map snd)
+        |> Map.ofList
 
-    let stop (proc: Process) =
-        Utils.stopProcess proc.Id
+    type StartResult =
+        { ProcessId: int
+          FileName: string
+          Args: string }
+
+    let start (config: Config) (state: State) =
+        genDevicesToRun config state
+        |> Map.toList
+        |> List.map (fun (profileIndex, deviceIndices) ->
+            let profile = config.Profiles.[profileIndex]
+            let fileName = profile.MinerFileName |> Path.GetFullPath
+            let args =
+                [   yield profile.MinerParams
+
+                    yield profile.UsedDevicesParamName
+                    yield deviceIndices |> List.map string |> String.concat profile.Separator
+
+                    for p in profile.DeviceSpecificParams do
+                        yield p.Key
+                        yield deviceIndices |> List.map (fun i -> p.Value.[i]) |> String.concat profile.Separator
+                ]
+                |> String.concat " "
+            use proc = Process.Start (fileName, args)
+            { ProcessId = proc.Id
+              FileName = proc.StartInfo.FileName
+              Args = proc.StartInfo.Arguments }
+        )
 
 let handle (config: Config) (state: State) =
     printfn "\n================================= %A =================================" DateTime.Now
     printfn "Config:\n%A" config
     printfn "State:\n%A" state
 
-    use proc = Miner.start config state
-    printfn "Miner started!"
-    printfn "Process ID: %d" proc.Id
-    printfn "Command: %s %s" proc.StartInfo.FileName proc.StartInfo.Arguments
+    let results = Miner.start config state
+    printfn "%d miner(s) started" results.Length
+    results
+    |> List.iteri (fun i result ->
+        printfn "Miner #%d:" i
+        printfn ">>Command: %s %s" result.FileName result.Args
+        printfn ">>Process ID: %d" result.ProcessId
+    )
 
     let fmt (ts: TimeSpan) = ts.ToString @"hh\:mm\:ss"
 
     let interval = TimeSpan.FromHours config.IntervalHours
-    printfn "Miner will be stopped at %A" (DateTime.Now + interval)
+    printfn "Miner(s) will be stopped at %A" (DateTime.Now + interval)
     Utils.countdown interval 1000 (fun ts -> Console.Write ("\rNow waiting for {0}", fmt ts))
     Console.WriteLine ()
 
-    printfn "Stop miner..."
-    Miner.stop proc
+    results
+    |> List.iteri (fun i result ->
+        printfn "Stop miner #%d with process ID %d" i result.ProcessId
+        Utils.stopProcess result.ProcessId
+    )
 
     Utils.countdown
         (TimeSpan.FromSeconds (float config.MinerStopSeconds))
         1000
-        (fun ts -> Console.Write ("\rWaiting for miner to be stopped completely {0}", fmt ts))
+        (fun ts -> Console.Write ("\rWaiting for miner(s) to be stopped completely {0}", fmt ts))
     Console.WriteLine ()
 
 let createUptimeTimer (prefix: string) (beginTime: DateTime) =
@@ -109,7 +136,7 @@ let createUptimeTimer (prefix: string) (beginTime: DateTime) =
 
 [<EntryPoint>]
 let main _ =
-    let version = "v1.10"
+    let version = "v1.11"
     printfn "sweet %s - nghia.buivan@hotmail.com" version
 
     let configFileName = "sweet.cfg"
