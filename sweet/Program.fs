@@ -45,7 +45,7 @@ module State =
     let private minByRandomly projection xs =
         let u = xs |> List.minBy projection |> projection
         let xs = xs |> List.filter (projection >> (=)u)
-        xs[random.Next xs.Length]
+        xs.[random.Next xs.Length]
 
     let next (state: State) : State * Device =
         let device, count =
