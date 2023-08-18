@@ -24,80 +24,86 @@ type Config =
     static member load path =
         path |> File.ReadAllText |> Json.deserialize : Config
 
-type State =
-    { CurrentDeviceIndex: int }
+type Device =
+    { ProfileIndex: int
+      DeviceIndex: int }
+    static member create a b = { ProfileIndex = a; DeviceIndex = b }
 
-    static member Default =
-        { CurrentDeviceIndex = 0 }
+type State = Map<Device, int>
 
-    static member clamp (config: Config) (state: State) =
-        let totalDevicesNumber = config.Profiles |> List.sumBy (fun p -> p.TotalDevicesNumber)
-        { state with
-            CurrentDeviceIndex = state.CurrentDeviceIndex % totalDevicesNumber }
+module State =
+    let init profileNumber (deviceNumber: int -> int) : State =
+        seq {
+            for a = 0 to profileNumber - 1 do
+                for b = 0 to (deviceNumber a) - 1 do
+                    yield Device.create a b, 0
+        }
+        |> Map.ofSeq
 
-    static member next (config: Config) (state: State) =
-        { state with CurrentDeviceIndex = state.CurrentDeviceIndex + config.RunDevicesNumber }
-        |> State.clamp config
+    let private random = Random()
 
-    static member load path =
-        try path |> File.ReadAllText |> Json.deserialize
-        with _ -> State.Default
+    let private minByRandomly projection xs =
+        let u = xs |> List.minBy projection |> projection
+        let xs = xs |> List.filter (projection >> (=)u)
+        xs[random.Next xs.Length]
 
-    static member save path (state: State) =
-        let json = state |> Json.serialize
-        File.WriteAllText (path, json)
+    let next (state: State) : State * Device =
+        let device, count =
+            state
+            |> Map.toList
+            |> minByRandomly snd
+        state |> Map.add device (count+1), device
+
+    let nextMulti number state =
+        ((state, []), seq { 1..number })
+        ||> Seq.fold (fun (state, devices) _ ->
+            let state, device = next state
+            state, device :: devices
+        )
 
 module Miner =
-    let private genDevicesToRun (config: Config) (state: State) =
-        Seq.initInfinite (fun _ ->
-            seq {
-                for profileIndex = 0 to config.Profiles.Length - 1 do
-                    for deviceIndex = 0 to config.Profiles.[profileIndex].TotalDevicesNumber - 1 do
-                        yield profileIndex, deviceIndex
-            }
-        )
-        |> Seq.concat
-        |> Seq.skip state.CurrentDeviceIndex
-        |> Seq.take config.RunDevicesNumber
-        |> List.ofSeq
-        |> List.groupBy fst
-        |> List.map (fun (profileIndex, devices) -> profileIndex, devices |> List.map snd)
-        |> Map.ofList
-
     type StartResult =
         { ProcessId: int
           FileName: string
           Args: string }
 
     let start (config: Config) (state: State) =
-        genDevicesToRun config state
-        |> Map.toList
-        |> List.map (fun (profileIndex, deviceIndices) ->
-            let profile = config.Profiles.[profileIndex]
-            let fileName = profile.MinerFileName |> Path.GetFullPath
-            let args =
-                [   yield profile.MinerParams
+        let state, devices = state |> State.nextMulti config.RunDevicesNumber
+        let results =
+            devices
+            |> List.groupBy (fun d -> d.ProfileIndex)
+            |> List.map (fun (profileIndex, devices) ->
+                let profile = config.Profiles.[profileIndex]
+                let fileName = profile.MinerFileName |> Path.GetFullPath
+                let args =
+                    [   yield profile.MinerParams
 
-                    yield profile.UsedDevicesParamName
-                    yield deviceIndices |> List.map string |> String.concat profile.Separator
+                        yield profile.UsedDevicesParamName
+                        yield devices
+                              |> Seq.map (fun d -> string d.DeviceIndex)
+                              |> String.concat profile.Separator
 
-                    for p in profile.DeviceSpecificParams do
-                        yield p.Key
-                        yield deviceIndices |> List.map (fun i -> p.Value.[i]) |> String.concat profile.Separator
-                ]
-                |> String.concat " "
-            use proc = Process.Start (fileName, args)
-            { ProcessId = proc.Id
-              FileName = proc.StartInfo.FileName
-              Args = proc.StartInfo.Arguments }
-        )
+                        for p in profile.DeviceSpecificParams do
+                            yield p.Key
+                            yield devices
+                                  |> Seq.map (fun d -> p.Value.[d.DeviceIndex])
+                                  |> String.concat profile.Separator
+                    ]
+                    |> String.concat " "
+                use proc = Process.Start (fileName, args)
+                { ProcessId = proc.Id
+                  FileName = proc.StartInfo.FileName
+                  Args = proc.StartInfo.Arguments }
+            )
+        state, results
 
 let handle (config: Config) (state: State) =
     printfn "\n================================= %A =================================" DateTime.Now
     printfn "Config:\n%A" config
     printfn "State:\n%A" state
 
-    let results = Miner.start config state
+    let state, results = Miner.start config state
+
     printfn "%d miner(s) started" results.Length
     results
     |> List.iteri (fun i result ->
@@ -125,6 +131,8 @@ let handle (config: Config) (state: State) =
         (fun ts -> Console.Write ("\rWaiting for miner(s) to be stopped completely {0}", fmt ts))
     Console.WriteLine ()
 
+    state
+
 let createUptimeTimer (prefix: string) (beginTime: DateTime) =
     let timer = new Timer (60. * 1000.)
     timer.AutoReset <- true
@@ -136,23 +144,18 @@ let createUptimeTimer (prefix: string) (beginTime: DateTime) =
 
 [<EntryPoint>]
 let main _ =
-    let version = "v1.11"
+    let version = "v1.12"
     printfn "sweet %s - nghia.buivan@hotmail.com" version
 
-    let configFileName = "sweet.cfg"
-    let stateFileName = "sweet.sav"
-
-    let config = Config.load configFileName
-    let mutable state = State.load stateFileName |> State.clamp config
+    let config = Config.load "sweet.cfg"
 
     use timer = createUptimeTimer (sprintf "sweet %s" version) DateTime.Now
     timer.Start ()
 
-    while true do
-        handle config state
-        state <- state |> State.next config
-        state |> State.save stateFileName
+    let rec loop state = state |> handle config |> loop
 
-    timer.Stop ()
+    State.init config.Profiles.Length (fun i -> config.Profiles.[i].TotalDevicesNumber)
+    |> loop
+    |> ignore
 
     0
