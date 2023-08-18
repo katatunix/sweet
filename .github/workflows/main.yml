@@ -10,11 +10,24 @@ jobs:
     steps:
     - name: checkout
       uses: actions/checkout@v3
+
     - name: setup nuget
       uses: nuget/setup-nuget@v1
+
     - name: setup msbuild
       uses: microsoft/setup-msbuild@v1.1
+
     - name: restore packages
       run: nuget restore
+
     - name: build solution
       run: msbuild -t:Build -p:Configuration=Release
+      
+    - name: upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        path: |
+          sweet/bin/Release/sweet.exe
+          sweet/bin/Release/*.dll
+          sweet/sweet.cfg build
+          stop/bin/Release/stop.exe
